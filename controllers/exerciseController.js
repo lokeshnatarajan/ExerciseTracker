@@ -26,59 +26,61 @@ const addExercise = asyncHandler(async (req, res) => {
   }
 });
 
-// Getting the Exercises
 const getExercises = asyncHandler(async (req, res) => {
   const { _id, username } = await getUserDetail(req.params._id);
-  let resultArr = await getUserExercises(_id);
-  if (req?.query?.from) {
-    resultArr = getLimitedExercises(resultArr.exercises, req.query);
-  }
-  const { exercises, count } = resultArr;
+
+  const { from = "", to = "", limit = "", page = "" } = req?.query;
+
+  console.log(isValidDate);
+
+  const { exercises, totalCount } = await getUserExercises(
+    _id,
+    from,
+    to,
+    limit,
+    page
+  );
+
   const result = {
     _id,
     username,
-    count,
+    count: totalCount,
     logs: exercises,
   };
 
   res.json(result);
 });
 
-//Getting Exercises of the Respective user
-const getUserExercises = asyncHandler(async (id) => {
-  const result = await exercise.find({ userId: id }).sort({ date: 1 });
-  const filteredExercise = result.map((obj) => {
-    const { _id, description, duration, date } = obj;
-    return { _id, description, duration, date };
-  });
-  const count = filteredExercise.length;
-  return { exercises: filteredExercise, count };
-});
+const getUserExercises = async (userId, from, to, limit, page) => {
+  const query = { userId };
 
-//Getting Exercises of The Respective user with some limited exercises
-const getLimitedExercises = (inputExercise, query) => {
-  const isValidDateformat = isValidDate(query);
-  if (!isValidDateformat) {
-    const { from, to, limit } = query;
-    let startDate = from ? new Date(from) : null;
-    let endDate = to ? new Date(to) : null;
-    if (endDate) {
-      // Set end date to the end of the day
-      endDate.setHours(23, 59, 59, 999);
-    }
-
-    const results = inputExercise?.filter(
-      (exercise) => exercise.date >= startDate && exercise.date <= endDate
-    );
-    const limitedExercise = limit ? results.slice(0, limit) : results;
-    const count = results.length;
-    return { exercises: limitedExercise, count };
+  if (from) {
+    query.date = { $gte: new Date(from) };
   }
+
+  if (to) {
+    query.date = query.date || {};
+    query.date.$lte = new Date(new Date(to).setHours(23, 59, 59, 999));
+  }
+
+  let exerciseQuery = exercise.find(query);
+
+  const limitValue = limit ? parseInt(limit) : 10;
+  const pageValue = page ? parseInt(page) : 1;
+
+  const skipValue = (pageValue - 1) * limitValue;
+
+  exerciseQuery = exerciseQuery.skip(skipValue).limit(limitValue);
+
+  const exercises = await exerciseQuery.exec();
+  const totalCount = await exercise.countDocuments(query);
+
+  return { exercises, totalCount };
 };
 
 module.exports = {
   addExercise,
   getExercises,
   getUserExercises,
-  getLimitedExercises,
+
 };
